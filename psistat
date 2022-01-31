@@ -1,0 +1,316 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Pressure Stall Indicators (PSI) status program.  Shows:
+    - 1, 3, and 5 second running averages( in percent) of
+      the 5 PSIs
+    - the recent history of PSI events that are defined by
+      exceeding a threshold percentage in a second.
+    - the thresholds defaults to 20%, and it can be changed
+      while running by 'k' (increase by five) and 'j' (decrease by five).
+Inspired by: unixism.net/2019/08/linux-pressure-stall-information-psi-by-example
+
+"""
+
+# pylint: disable=invalid-name,too-many-instance-attributes,import-outside-toplevel,broad-except
+
+import sys
+import time
+import re
+import traceback
+from datetime import datetime
+import curses as cs
+import curses.ascii
+import locale
+locale.setlocale(locale.LC_ALL, '') # needed to draw unicode chars
+
+SAMPLES = 11
+BILLION = 1000000000
+
+##############################################################################
+##   Turn time differences in seconds to a compact representation;
+##   e.g., '18h·39m'
+##   is executable if absolute
+##############################################################################
+def ago_str(delta_secs):
+    """Prints a 6-character string (max) the represents how long
+    ago (i.e., delta_secs) is briefly."""
+    ago = int(max(0, round(delta_secs if delta_secs >= 0 else -delta_secs)))
+    divs = (60, 60, 24, 7, 52, 9999999)
+    units = ('s', 'm', 'h', 'd', 'w', 'y')
+    vals = (ago%60, int(ago/60)) # seed with secs, mins (step til 2nd fits)
+    uidx = 1 # best units
+    for div in divs[1:]:
+        # print('vals', vals, 'div', div)
+        if vals[1] < div:
+            break
+        vals = (vals[1]%div, int(vals[1]/div))
+        uidx += 1
+    rv = '{:d}{}'.format(vals[1], units[uidx]) if vals[1] else '   '
+    rv += '{:d}{}'.format(vals[0], units[uidx-1])
+    return rv
+
+class Window():
+    """A little wrapper atop curses to take away some of the pain.
+    Supports only the main screen.
+    """
+    # pylint: disable=too-many-arguments
+    scr = None
+
+    @staticmethod
+    def exit_handler():
+        """For ctl-c and other exits, to avoid leaving the screen hosed."""
+        if Window.scr:
+            cs.nocbreak()
+            cs.echo()
+            cs.endwin()
+            Window.scr.keypad(0)
+            Window.scr = None
+
+    def __init__(self, timeout=1000, curs_set=0):
+        assert not Window.scr, "cannot create two Window objects"
+        import atexit
+        atexit.register(Window.exit_handler)
+        self.timeout = timeout
+        self.cum_timeout = 0
+        self.max_x, self.max_y = 0, 0  # number of screen columns, rows
+        Window.scr = cs.initscr()   # initialize curses screen
+        cs.noecho()             # turn off auto echoing of keypress on to screen
+        cs.cbreak()             # enter break mode (entering newline not req'd)
+        cs.curs_set(curs_set)   # hide cursor by default (0) or set passed value
+        Window.scr.keypad(1)               # enable special Key values such as cs.KEY_LEFT etc
+        Window.scr.timeout(self.timeout)   # max delay in getchr()
+        self.max_y, self.max_x = Window.scr.getmaxyx()
+
+    def getch(self, timeout=None):
+        """Pauses for user input and refreshes screen.
+        - 'timeout' defaults to constructor value.
+        - returns the input character (None if timeout expires).
+        """
+        key = None
+        assert Window.scr, "no instantiated Window"
+        if timeout is not None and timeout != self.timeout:
+            Window.scr.timeout(timeout)
+            key = Window.scr.getch()
+            Window.scr.timeout(self.timeout)
+            self.cum_timeout += min(100, timeout)
+        else:
+            key = Window.scr.getch()
+            self.cum_timeout += min(100, self.timeout)
+
+        if self.cum_timeout >= 10000:
+            Window.scr.refresh()
+            self.cum_timeout = 0
+        key = None if key == curses.ERR else key
+        self.max_y, self.max_x = Window.scr.getmaxyx()
+        return key
+
+    def pause(self, timeout=None):
+        """Pauses for user input and refreshes screen.
+        - 'timeout' defaults to constructor value.
+        - returns False if input is 'q' else True (False => end program)
+        """
+        return self.getch(timeout) != ord('q')
+
+    def draw(self, y, x, text, text_attr=None, width=None, leftpad=False):
+        """Draws the given text (as utf-8 or unicode) at position (row=y,col=x)
+        with optional text attributes and width.
+        """
+        text_attr = text_attr if text_attr else cs.A_NORMAL
+        if y < 0 or y >= self.max_y: # nada if above or below screen
+            return
+        if x < 0 or x >= self.max_x: # nada if left or right of screen
+            return
+
+        width = self.max_x - x if width is None else min(width, self.max_x - x)
+        if width <= 0:
+            return
+
+        uni = text if isinstance(text, str) else text.decode('utf-8')
+        padlen = width - len(uni)
+        if padlen > 0:
+            if leftpad:
+                uni = padlen * ' ' + uni
+            else:  # rightpad
+                uni += padlen * ' '
+        text = uni[:width].encode('utf-8')
+
+        try:
+            Window.scr.addstr(y, x, text, text_attr)
+        except curses.error:
+            # this sucks, but curses returns an error if drawing the last character
+            # on the screen always.  this can happen if resizing screen even if
+            # special care is taken.  So, we just ignore errors.  Anyhow, you cannot
+            # get decent error handling.
+            pass
+
+class PressureGroup:
+    """Handler for one PSI group (i.e., cpu, io, or memory)
+    """
+    pattern = re.compile(r'^(\S+)\b.*=(\d+)$')
+    def __init__(self, debug, tag, stats):
+        self.DB = debug
+        self.stats = stats
+        self.tag = tag
+        self.fullpath = '/proc/pressure/' + tag
+        self.handle = open(self.fullpath)
+
+    def get_sample(self):
+        """Read/Parse the /proc/pressure/{group} file looking like:
+        some avg10=0.00 avg60=0.00 avg300=0.23 total=828994055
+        full avg10=0.00 avg60=0.00 avg300=0.23 total=807384187
+        ---
+        We are just taking the first value and the last (i.e., the
+        cumulative microseconds blocked).  We'll store the us blocked
+        in a bounded list of samples.
+        """
+        self.handle.seek(0)
+        document = self.handle.read()
+        for line in document.splitlines():
+            match = self.pattern.match(line)
+            if self.DB:
+                print('DB:', self.tag, line)
+            subkey, micro = match.group(1), match.group(2)
+            key = f'{self.tag}.{subkey}'
+            micros = self.stats.get(key, None)
+            if not micros:
+                self.stats[key] = micros = []
+            micros.insert(0, int(micro))
+            del micros[SAMPLES:]
+
+class PsiStat:
+    """Class to display PSI information including
+    running averages and exception events"""
+    def __init__(self, debug=True, threshold=20):
+        self.DB = debug
+        self.next_mono = time.monotonic_ns() # when to sleep to next
+        self.stats = {}
+        self.monos = []
+        self.times = []
+        self.psgs = []
+        self.events = []
+        self.threshold = threshold
+        self.lineno = 0
+        self.window = None if self.DB else Window()
+        for tag in 'cpu', 'io', 'memory':
+            self.psgs.append(PressureGroup(debug, tag, self.stats))
+
+    def putline(self, line, reverse=False):
+        """Display one line.  We assume the lines are given
+        in order (i.e., from top to bottom)."""
+        if self.DB:
+            print(line)
+        else:
+            attr = cs.A_REVERSE if reverse else None
+            self.window.draw(self.lineno, 0, line, text_attr=attr)
+            self.lineno += 1
+
+    def prc_samples(self):
+        """Show the current PSI stats/events using the
+        most recent samples while also detecting new events
+        for exceptional samples.  Then show the recent events.
+        """
+        if self.DB:
+            print(self.stats)
+
+        if not self.DB:
+            title = f' Thresh={self.threshold}%  Keys:: j:-5, k:+5, q:quit'
+            self.putline(title, reverse=True)
+
+        header = f'{"Stall%":-^11} {"1s":>7} {"3s":>7} {"10s":>7}'
+        self.putline(header)
+        for key in self.stats:
+            micros = self.stats[key]
+            line = f'{key:>11}'
+            for ii in (1, 3, 10):
+                if len(micros) <= ii:
+                    continue
+
+                delta_micros = (micros[0] - micros[ii])
+                delta_monos = (self.monos[0] - self.monos[ii])
+                pct = 100 * 1000 * delta_micros / delta_monos
+                if self.DB and delta_micros > 0:
+                    print(f'DB: {key} {delta_micros} / {delta_monos} = {pct:.9f}%')
+                line += f' {pct:7.3f}'
+
+                # detect/collect the 1s samples that exceed the threshold
+                if ii == 1 and round(pct, 3) >= self.threshold:
+                    event = f'{datetime.now().isoformat()} {key} {pct:7.3f} >= {self.threshold}'
+                    if self.DB:
+                        print(event)
+                    else:
+                        self.events.insert(0, (time.monotonic_ns(), event))
+
+            self.putline(line)
+        del self.events[100:]
+
+        # show the samples
+        for event in self.events:
+            mono_ns, descr = event
+            ago = ago_str((time.monotonic_ns() - mono_ns)/BILLION)
+            self.putline(f'{ago:>6}: {descr}')
+
+
+    def loop(self):
+        """Do one loop of collecting samples, and then displaying running
+        averages and exception events."""
+        for psg in self.psgs:
+            psg.get_sample()
+        self.times.insert(0, time.time())
+        mono = time.monotonic_ns()
+        self.monos.insert(0, mono)
+        del self.monos[SAMPLES:]
+        del self.times[SAMPLES:]
+
+        self.lineno = 0
+        self.prc_samples()
+
+        delta = self.next_mono - mono
+        while delta <= 0:
+            self.next_mono += BILLION
+            delta = self.next_mono - mono
+
+        if self.DB:
+            time.sleep(delta / BILLION)
+        else:
+            while delta > 0:
+                keystroke = self.window.getch(int(delta / BILLION * 1000))
+                delta = self.next_mono - time.monotonic_ns()
+                if keystroke:
+                    if keystroke == ord('j'):
+                        if self.threshold >= 5:
+                            self.threshold -= 5
+                    elif keystroke == ord('k'):
+                        if self.threshold <= 90:
+                            self.threshold += 5
+                    elif keystroke == ord('q'):
+                        return False
+        return True
+
+
+def main():
+    """TBD"""
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-D', '--debug', action='store_true', help='debug mode w/o Window')
+    parser.add_argument('-t', '--threshold-pct', default=20, type=int,
+            help='event threshold pct [min=5, max=95, dflt=20]')
+    args = parser.parse_args()
+    pct = int(round(args.threshold_pct / 5))*5
+    pct = min(max(pct, 5), 95)
+
+    pstall = PsiStat(debug=args.debug, threshold=pct)
+
+    while pstall.loop():
+        pass
+
+
+if __name__ == '__main__':
+
+    try:
+        main()
+
+    except Exception as exc:
+        Window.exit_handler()
+        print("exception:", str(exc))
+        print(traceback.format_exc())
