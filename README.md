@@ -14,7 +14,8 @@ For example, this might suffice for your install:
 ```
 
 ## Instruction for Use
-Typically, simply run `psistat`.  Its window looks like
+Typically, simply run `psistat`.  Its window looks like:
+
 ![psistat-screenshot](images/psistat-screenshot.png)
 
 `psistat` displays:
