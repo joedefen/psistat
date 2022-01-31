@@ -19,12 +19,11 @@ Typically, simply run `psistat`.  Its window looks like:
 ![psistat-screenshot](images/psistat-screenshot.png)
 
 `psistat` displays:
-* On the top portion of the screen,  the 1s, 3s, and 10s running averages
-  for each of the PSI stats.
+* On the top portion of the screen, the 1s, 3s, and 10s PSI stats (each is a percent stalled during the interval).
 * Below the stats is a list of exception events beginning with the most recent;
   each event includes:
   * The relative time and absolution time of the event.
-  * The the type of event.
+  * The type of event.
   * The pressure value as a percentage relative to the current threshold.
 
 
