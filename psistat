@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+Copyright (c) 2022 Joe Defen
+
 Pressure Stall Indicators (PSI) status program.  Shows:
-    - 1, 3, and 5 second running averages( in percent) of
-      the 5 PSIs
+    - 1, 3, and 5 second running averages( in percent) of the 5 PSIs
     - the recent history of PSI events that are defined by
       exceeding a threshold percentage in a second.
     - the thresholds defaults to 20%, and it can be changed
       while running by 'k' (increase by five) and 'j' (decrease by five).
+      
 Inspired by: unixism.net/2019/08/linux-pressure-stall-information-psi-by-example
-
 """
 
 # pylint: disable=invalid-name,too-many-instance-attributes,import-outside-toplevel,broad-except
