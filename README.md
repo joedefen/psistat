@@ -15,7 +15,7 @@ For example, this might suffice for your install:
 
 ## Instruction for Use
 Typically, simply run `psistat`.  Its window looks like
-![psistat-screenshot](images/psistat-acreenshot.png)
+![psistat-screenshot](images/psistat-screenshot.png)
 
 `psistat` displays:
 * On the top portion of the screen,  the 1s, 3s, and 10s running averages
