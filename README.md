@@ -1,7 +1,7 @@
 # Linux Pressure Stall Information (PSI) Status App
-`psistat` is a simple python3 program to display the PSIs and to capture/display exception events.
+`psistat` is a simple python3 program to display the PSIs and to capture/display exception events.  See [PSI - Pressure Stall Information — The Linux Kernel documentation](https://docs.kernel.org/accounting/psi.html) for more information.
 
-`psistat` might be found helpful when encountering unexplained delays and you wish to identify down the general cause.
+`psistat` might be found helpful when encountering unexplained system delays and you wish to identify the general cause.  Regularly occuring high PSIs may indicate the system is undersized or overloaded, and, if warranted, implementing automated load-shedding.  
 
 ## Installation
 Download the `psistat` program, make it excutable, and put in on your execution path.
