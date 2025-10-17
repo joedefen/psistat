@@ -65,6 +65,7 @@ class PressureGroup:
         """Read/Parse the /proc/pressure/{group} file"""
         self.handle.seek(0)
         document = self.handle.read()
+        allowed_subkeys = {'full', 'some'}
         for line in document.splitlines():
             match = self.pattern.match(line)
             if self.DB:
@@ -73,22 +74,31 @@ class PressureGroup:
             # NOTE: Your original regex assumed match was successful. Adding check.
             if not match:
                 continue
-
             subkey, micro = match.group(1), match.group(2)
+            if subkey not in allowed_subkeys:
+                continue
+            allowed_subkeys.discard(subkey)
             key = f'{self.tag}.{subkey}'
             micros = self.stats.get(key, None)
             if not micros:
-                self.stats[key] = micros = []
+                self.stats[key] = micros = []   
             micros.insert(0, int(micro))
             del micros[SAMPLES:]
+        assert not allowed_subkeys, f"{self.fullpath} expecting full+some values"
 
 class PsiStat:
     """Class to display PSI information including
     running averages and exception events"""
+    singleton = None
     def __init__(self, debug=True, threshold=20):
         self.DB = debug
+        assert self.singleton is None
+        PsiStat.singleton = self
         self.next_mono = time.monotonic_ns() # when to sleep to next
-        self.stats = {}
+        self.stats = { 'cpu.full': [], 'cpu.some': [],
+                       'io.full': [], 'io.some': [],
+                       'memory.full': [], 'memory.some': []
+                     }
         self.monos = []
         self.times = []
         self.psgs = []
@@ -131,17 +141,21 @@ class PsiStat:
             self.window.add_header(title)
 
         # Draw Header
-        header = f'{"Stall%":-^11} {"1s":>7} {"3s":>7} {"10s":>7}'
+        header = (f'{"Full.Stall%":>11} {"1s":-^7} {"3s":-^7} {"10s":-^7}'
+                  + f'     {"Some.Stall%":>11} {"1s":-^7} {"3s":-^7} {"10s":-^7}')
         # Using add_body here since ConsoleWindow separates header content from title line
-        self.window.add_body(header) 
+        self.window.add_header(header) 
         
         # --- Draw PSI Stats ---
-        for key in self.stats:
+        line = ''
+        for idx, key in enumerate(self.stats):
             micros = self.stats[key]
-            line = f'{key:>11}'
+            line += f'{key:>11}'
             
             for ii in (1, 3, 10):
                 if len(micros) <= ii:
+                    # line += f' {pct:7.3f}'
+                    line += ' ' + 'n/a'.rjust(7)
                     continue
 
                 delta_micros = (micros[0] - micros[ii])
@@ -167,13 +181,14 @@ class PsiStat:
                         # Event structure remains the same (mono_ns, descr)
                         self.events.insert(0, (time.monotonic_ns(), event))
 
-            self.window.add_body(line)
+            if idx % 2 == 0:
+                line += '     '
+            else:
+                self.window.add_header(line)
+                line = ''
             
         del self.events[100:]
         
-        # Add separator before events
-        self.window.add_body("-" * 40)
-
         # --- Draw Events ---
         for event in self.events:
             mono_ns, descr = event
@@ -230,7 +245,6 @@ class PsiStat:
         # The loop continues after timeout or non-threshold keystroke
         return True
 
-
 def main():
     """Main execution function, handles CLI arguments."""
     import argparse
@@ -259,5 +273,8 @@ if __name__ == '__main__':
     except Exception as exc:
         # Note: We no longer call Window.exit_handler(), as ConsoleWindow handles it
         # and there is no guarantee the Window class was ever initialized.
+        if PsiStat.singleton and PsiStat.singleton.window:
+            PsiStat.singleton.window.stop_curses()
+
         print("exception:", str(exc))
         print(traceback.format_exc())
