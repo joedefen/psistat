@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Copyright (c) 2022 Joe Defen
+Copyright (c) 2022-2025 Joe Defen
 
 Pressure Stall Indicators (PSI) status program. Shows:
     - 1, 3, and 5 second running averages( in percent) of the 5 PSIs
@@ -9,6 +9,17 @@ Pressure Stall Indicators (PSI) status program. Shows:
       exceeding a threshold percentage in a second.
       
 Now uses the 'console-window' library for the TUI interface.
+
+TODO List:
+  -- add spinner to change the event interval; start with 10 (allow 3 and 1)
+  -- add cooldown period after event (10, 3, 1)
+  -- add dump key to drop out of curses, dump the known events, prompt to return to curses
+  -- add automatic dump on end of program
+  -- put the keys and current values on the first line + the current HH:SS
+  -- update install in README (to pipx), show new look, show new options/keys,
+     show new CLI options
+  -- create .toml and structure for publish to pypi.org
+  -- advertise psistat on r/linux
 """
 
 # pylint: disable=invalid-name,too-many-instance-attributes,import-outside-toplevel,broad-except,too-many-locals
@@ -18,6 +29,7 @@ import time
 import re
 import traceback
 from datetime import datetime
+from types import SimpleNamespace
 # REMOVED: import curses as cs
 import locale
 from console_window import ConsoleWindow, OptionSpinner
@@ -141,13 +153,15 @@ class PsiStat:
             self.window.add_header(title)
 
         # Draw Header
-        header = (f'{"Full.Stall%":>11} {"1s":-^7} {"3s":-^7} {"10s":-^7}'
-                  + f'     {"Some.Stall%":>11} {"1s":-^7} {"3s":-^7} {"10s":-^7}')
+        header = (f'{"Full.Stall%":>11} {"1s":->7} {"3s":->7} {"10s":->7}'
+                  + f'     {"Some.Stall%":>11} {"1s":->7} {"3s":->7} {"10s":->7}')
         # Using add_body here since ConsoleWindow separates header content from title line
         self.window.add_header(header) 
         
         # --- Draw PSI Stats ---
-        line = ''
+        line, event = '', ''
+        now = time.time()
+        mono_now = time.monotonic_ns()
         for idx, key in enumerate(self.stats):
             micros = self.stats[key]
             line += f'{key:>11}'
@@ -174,26 +188,35 @@ class PsiStat:
 
                 # detect/collect the 1s samples that exceed the threshold
                 if ii == 1 and round(pct, 3) >= threshold:
-                    event = f'{datetime.now().isoformat()} {key} {pct:7.3f} >= {threshold}'
+                    if not event:
+                        dt_object = datetime.fromtimestamp(now)
+                            # Truncate microseconds to milliseconds (.mmm) with [:-3]
+                        event += dt_object.strftime("%m-%d %H:%M:%S.%f")[:-3]
+
+                    specifically = f' {key:>11s} {pct:7.3f}'
+                    if '.full' not in event and '.some' in key:
+                        event += ' ' * len(specifically)
+                    event += specifically
                     if self.DB:
                         print(event)
-                    else:
-                        # Event structure remains the same (mono_ns, descr)
-                        self.events.insert(0, (time.monotonic_ns(), event))
 
             if idx % 2 == 0:
                 line += '     '
             else:
                 self.window.add_header(line)
                 line = ''
+                if event:
+                    event += f'   >={threshold}'
+                    self.events.insert(0, (time.monotonic_ns(), event))
+                    event = ''
             
         del self.events[100:]
         
         # --- Draw Events ---
         for event in self.events:
             mono_ns, descr = event
-            ago = ago_str((time.monotonic_ns() - mono_ns)/BILLION)
-            self.window.add_body(f'{ago:>6}: {descr}')
+            ago = ago_str((time.monotonic_ns() - mono_ns)/BILLION).strip()
+            self.window.add_body(f'{ago:>6s}: {descr}')
 
 
     def loop(self):
