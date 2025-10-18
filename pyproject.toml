@@ -1,0 +1,48 @@
+[build-system]
+requires = ["flit_core >=3.9,<5"] # Updated to a current range
+build-backend = "flit_core.buildapi"
+
+# ----------------------------------------------------------------------
+# FLIT MODULE CONFIGURATION
+# Flit looks for a single file module named psistat.py
+[tool.flit.module]
+name = "psistat"
+
+# ----------------------------------------------------------------------
+# UNIFIED PROJECT METADATA
+[project]
+name = "psistat"
+version = "1.0.0"
+description = "psistat - A simple command-line system status tool."
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+
+# Add dependencies here if you use non-stdlib PyPI packages (e.g., requests, rich)
+dependencies = [
+    # "dependency-name >= version",
+    'console-window >= 1.0.0',
+]
+
+authors = [
+    {name = "Joe Defen", email = "joedef@duck.com"}, # ✏️ Your info
+]
+
+# ✏️ Update classifiers to match your project
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "License :: OSI Approved :: MIT License",
+    "Environment :: Console",
+    "Topic :: System :: Monitoring",
+]
+
+keywords = ["system", "status", "cli"] # ✏️ Add relevant keywords
+
+# ----------------------------------------------------------------------
+# COMMAND LINE SCRIPTS
+# This tells flit to create an executable 'psistat' command
+# that calls the 'main()' function in the 'psistat' module (psistat.py)
+[project.scripts]
+psistat = "psistat:main"

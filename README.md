@@ -16,7 +16,9 @@ For example, this might suffice for your install:
 ## Instruction for Use
 Typically, simply run `psistat`.  Its window looks like:
 
-![psistat-screenshot](images/psistat-screenshot.png)
+```
+TBD
+```
 
 `psistat` displays:
 * On the top portion of the screen, the 1s, 3s, and 10s PSI stats (each is a percent stalled during the interval).
