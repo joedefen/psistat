@@ -9,17 +9,6 @@ Pressure Stall Indicators (PSI) status program. Shows:
       exceeding a threshold percentage in a second.
       
 Now uses the 'console-window' library for the TUI interface.
-
-TODO List:
-  -- add spinner to change the event interval; start with 10 (allow 3 and 1)
-  -- add cooldown period after event (10, 3, 1)
-  -- add dump key to drop out of curses, dump the known events, prompt to return to curses
-  -- add automatic dump on end of program
-  -- put the keys and current values on the first line + the current HH:SS
-  -- update install in README (to pipx), show new look, show new options/keys,
-     show new CLI options
-  -- create .toml and structure for publish to pypi.org
-  -- advertise psistat on r/linux
 """
 
 # pylint: disable=invalid-name,too-many-instance-attributes,import-outside-toplevel,broad-except,too-many-locals
@@ -111,7 +100,7 @@ class PsiStat:
     """Class to display PSI information including
     running averages and exception events"""
     singleton = None
-    def __init__(self, threshold=20, brief=False):
+    def __init__(self, threshold=5, brief=False, itvl=10):
         assert self.singleton is None
         PsiStat.singleton = self
         self.next_mono = time.monotonic_ns() # when to sleep to next
@@ -134,10 +123,8 @@ class PsiStat:
         self.spin.add_key('help_mode', '? - toggle help screen', vals=[False, True])
         self.spin.add_key(attr='event_interval', descr='i - event interval (secs)',
                   vals=[10, 3, 1, 300, 60])
-        self.spin.add_key(attr='threshold', descr='T - raise threshold (+5%)',
-                  vals=list(range(5, 100, 5))) # 5, 10, 15, ..., 95)
-        self.spin.add_key(attr='lower_threshold', descr='t - lower threshold (-5%)',
-                  vals=[False, True])
+        self.spin.add_key(attr='threshold', descr='t - set event threshold percent [1,99]',
+                          prompt="Enter event threshold percent in range [1,99]")
         self.spin.add_key(attr='brief', descr='b - only load events that fit on screen',
                   vals=['off', 'on'])
         self.spin.add_key(attr='dump_now', descr='d - dump event log now',
@@ -152,6 +139,8 @@ class PsiStat:
         # other_keys.add(27) # ESCAPE
         # other_keys.add(10) # another form of ENTER
         self.opts.brief = 'on' if brief else 'off'
+        self.opts.threshold = threshold
+        self.opts.event_interval = itvl
 
         # Initialize ConsoleWindow
         self.window = ConsoleWindow(head_line=True, keys=self.spin.keys^other_keys)
@@ -185,7 +174,7 @@ class PsiStat:
         dt_object = datetime.fromtimestamp(time.time())
         hhmmss = dt_object.strftime("%H:%M:%S")
 
-        title = f'PSIs {hhmmss} | [tT]hresh={threshold}% [i]tvl={itvl} [b]rief={brief} [d]ump ?:help [q]uit'
+        title = f'PSIs {hhmmss} | [t]hresh={threshold}% [i]tvl={itvl}s [b]rief={brief} [d]ump ?:help [q]uit'
         self.window.add_header(title)
 
         # Draw Header
@@ -230,7 +219,7 @@ class PsiStat:
                             # Truncate microseconds to milliseconds (.mmm) with [:-3]
                         event += dt_object.strftime("%m-%d %H:%M:%S.%f")[:-3]
 
-                    specifically = f'{pct:7.2f} {key:<11s}'
+                    specifically = f'{pct:7.1f}% {key:<11s}'
                     if '.full' not in event and '.some' in key:
                         event += '  ' + '.' * len(specifically)
                     event += '  ' + specifically
@@ -246,7 +235,7 @@ class PsiStat:
                 if event:
                     if '.some' not in event and '.full' in key:
                         event += '  ' + '.' * len(specifically)
-                    event += f'   >={threshold} i={itvl}'
+                    event += f'   >={threshold}% i={itvl}s'
                     self.events.insert(0, (time.monotonic_ns(), event))
                     event = ''
             
@@ -282,7 +271,8 @@ class PsiStat:
         count = 1
         del self.monos[SAMPLES:]
         for loop in range(0, len(self.monos) - 1):
-            if self.monos[loop+1] - self.monos[loop] > 1.25:
+            delta_ns = self.monos[loop] - self.monos[loop+1]
+            if  delta_ns > 1000000000 * 1.25:
                 break
             count += 1
         return count
@@ -329,12 +319,15 @@ class PsiStat:
         if keystroke is not None:
             # Pass key to OptionSpinner for handling 'j' and 'k'
             if self.spin.do_key(keystroke, self.window):
-                if self.opts.lower_threshold:
-                    if self.opts.threshold > 10:
-                        self.opts.threshold -= 5
-                    else:
-                        self.opts.threshold = 95
-                    self.opts.lower_threshold = False
+                if isinstance(self.opts.threshold, str):
+                    try:
+                        self.opts.threshold = int(self.opts.threshold)
+                        if self.opts.threshold < 1:
+                            self.opts.threshold = 1
+                        elif self.opts.threshold > 99:
+                            self.opts.threshold = 99
+                    except Exception:
+                        self.opts.threshold = 999999
                 if self.opts.dump_now:
                     self.dump_event_log(do_return=True)
                     self.opts.dump_now = False
@@ -353,20 +346,17 @@ def main():
         """Main execution function, handles CLI arguments."""
         import argparse
         parser = argparse.ArgumentParser()
-        parser.add_argument('-t', '--threshold-pct', default=20,
-                            choices=[5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95],
-                            help='event threshold pct [min=5, max=95, dflt=20]')
         parser.add_argument('-b', '--brief', action='store_true',
-                            help='whether present only as meay events as fit on the screen')
+                            help='whether present only as meny events as fit on the screen')
         parser.add_argument('-i', '--event-interval', default=10, type=int, choices=[1,3,10,60,300],
-                            help='event threshold pct')
+                            help='average interval used for events')
+        parser.add_argument('-t', '--threshold-pct', default=5, type=int,
+                            help='event threshold percent [1-99,dflt=5]')
         opts = parser.parse_args()
         
-        # Calculate nearest multiple of 5 between 5 and 95, preserving original logic
-        pct = int(round(opts.threshold_pct / 5))*5
-        pct = min(max(pct, 5), 95)
+        pct = min(max(opts.threshold_pct, 1), 99)
 
-        pstall = PsiStat(threshold=pct, brief=opts.brief)
+        pstall = PsiStat(threshold=pct, brief=opts.brief, itvl=opts.event_interval)
 
         while pstall.loop():
             pass
