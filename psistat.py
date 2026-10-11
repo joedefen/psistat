@@ -20,9 +20,7 @@ import re
 import traceback
 from datetime import datetime
 from types import SimpleNamespace
-import curses as cs
 import locale
-from types import SimpleNamespace
 from console_window import ConsoleWindow, OptionSpinner
 
 locale.setlocale(locale.LC_ALL, '') # needed to draw unicode chars
