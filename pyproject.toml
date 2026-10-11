@@ -12,7 +12,7 @@ name = "psistat"
 # UNIFIED PROJECT METADATA
 [project]
 name = "psistat"
-version = "1.0.0"
+version = "1.1.0"
 description = "psistat - A simple command-line system status tool."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -47,3 +47,24 @@ keywords = ["system", "status", "cli"] # ✏️ Add relevant keywords
 # that calls the 'main()' function in the 'psistat' module (psistat.py)
 [project.scripts]
 psistat = "psistat:main"
+
+# ----------------------------------------------------------------------
+# DEVELOPMENT TOOLING
+# Install with: pip install -e ".[dev]"
+[project.optional-dependencies]
+dev = [
+    "pytest >= 8",
+    "ruff >= 0.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "PLE"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"

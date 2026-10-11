@@ -1,26 +1,27 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Copyright (c) 2022-2025 Joe Defen
 
 Pressure Stall Indicators (PSI) status program. Shows:
-    - 1, 3, and 5 second running averages( in percent) of the 5 PSIs
+    - 1, 3, 10, 60, and 300 second running averages (in percent) of the
+      6 PSI stats (cpu/io/memory x full/some)
     - the recent history of PSI events that are defined by
       exceeding a threshold percentage in a second.
-      
+
 Now uses the 'console-window' library for the TUI interface.
 """
 
 # pylint: disable=invalid-name,too-many-instance-attributes,import-outside-toplevel,broad-except,too-many-locals
 
-import sys
+import locale
 import os
-import time
 import re
+import sys
+import time
 import traceback
 from datetime import datetime
 from types import SimpleNamespace
-import locale
+
 from console_window import ConsoleWindow, OptionSpinner
 
 locale.setlocale(locale.LC_ALL, '') # needed to draw unicode chars
@@ -46,7 +47,7 @@ def ago_str(delta_secs):
             break
         vals = (vals[1]%div, int(vals[1]/div))
         uidx += 1
-    rv = '{:d}{}'.format(vals[1], units[uidx]) if vals[1] else ''
+    rv = f'{vals[1]:d}{units[uidx]}' if vals[1] else ''
     fmt = '{:02d}{}' if vals[1] else '{:2d}{}'
     rv += fmt.format(vals[0], units[uidx-1])
     return rv
@@ -62,7 +63,7 @@ class PressureGroup:
         self.tag = tag
         self.fullpath = '/proc/pressure/' + tag
         self.handle = open(self.fullpath)
-        
+
     def sample_ns(self):
         """ return the initialized namespace for a sample.
         It includes the list of recent microseconds of pressure samples and
@@ -76,7 +77,7 @@ class PressureGroup:
         allowed_subkeys = {'full', 'some'}
         for line in document.splitlines():
             match = self.pattern.match(line)
-            
+
             # NOTE: Your original regex assumed match was successful. Adding check.
             if not match:
                 continue
@@ -130,32 +131,29 @@ class PsiStat:
         self.spin.add_key(attr='quit', descr='q or CTRL-c - quit program',
                   vals=[False, True])
 
-        # FIXME: keys
-        others = ''
-        other_keys = set(ord(x) for x in others)
-        # other_keys.add(cs.KEY_ENTER)
-        # other_keys.add(27) # ESCAPE
-        # other_keys.add(10) # another form of ENTER
         self.opts.brief = 'on' if brief else 'off'
         self.opts.threshold = threshold
         self.opts.event_interval = itvl
 
         # Initialize ConsoleWindow
-        self.window = ConsoleWindow(head_line=True, keys=self.spin.keys^other_keys)
+        self.window = ConsoleWindow(head_line=True, keys=self.spin.keys)
 
         for tag in 'cpu', 'io', 'memory':
             self.psgs.append(PressureGroup(tag, self.stats))
 
 
     def dump_event_log(self, do_return=False):
-        """  drop out of Window and dump the events """
+        """Drop out of the window and dump the event log to the terminal."""
         if self.window:
             self.window.stop_curses()
         os.system('clear; stty sane')
         for event in reversed(self.events):
             print(event[1])
         if do_return:
-            os.system(r' /bin/echo -e "\n\n===== Press ENTER to return to psistat ====> \c"; read FOO')
+            try:
+                input('\n\n===== Press ENTER to return to psistat ====> ')
+            except EOFError:
+                pass
             if self.window:
                 self.window._start_curses()
 
@@ -172,14 +170,16 @@ class PsiStat:
         dt_object = datetime.fromtimestamp(time.time())
         hhmmss = dt_object.strftime("%H:%M:%S")
 
-        title = f'PSIs {hhmmss} | [t]hresh={threshold}% [i]tvl={itvl}s [b]rief={brief} [d]ump ?:help [q]uit'
+        title = (f'PSIs {hhmmss} | [t]hresh={threshold}% [i]tvl={itvl}s '
+                 f'[b]rief={brief} [d]ump ?:help [q]uit')
         self.window.add_header(title)
 
-        # Draw Header
-        header = (f' {"1s":->5} {"3s":->5} {"10s":->5} {"60s":->5} {"300s":->5}  {"Full.Stall%":>11}'
-                  + f'      {"1s":->5} {"3s":->5} {"10s":->5} {"60s":->5} {"300s":->5}  {"Some.Stall%":>11}')
-        self.window.add_header(header) 
-        
+        # Draw Header (6-wide stat columns + 6-wide tag column keep the same width)
+        cols = f' {"1s":->6} {"3s":->6} {"10s":->6} {"60s":->6} {"300s":->6}'
+        header = (f'{cols}  {"Full%":<6}'
+                  + f'     {cols}  {"Some%":<6}')
+        self.window.add_header(header)
+
         # --- Draw PSI Stats ---
         line, event, specifically = '', '', ''
         now = time.time()
@@ -187,26 +187,26 @@ class PsiStat:
             micros = self.stats[key].micros
             del micros[valid_sample_count:]
             avgs = self.stats[key].avgs
-            
+
             for ii in (1, 3, 10, 60, 300):
                 if ii in (1, 3, 10):
                     if len(micros) <= ii:
-                        line += ' ' + 'n/a'.rjust(5)
+                        line += ' ' + 'n/a'.rjust(6)
                         continue
 
                     delta_micros = (micros[0] - micros[ii])
                     delta_monos = (self.monos[0] - self.monos[ii])
-                    
+
                     # Avoid division by zero if delta_monos is unexpectedly zero
                     if delta_monos == 0:
                         pct = 0.0
                     else:
                         pct = 100 * 1000 * delta_micros / delta_monos
-                    
+
                 else:
                     pct = avgs.get(ii, 0.0)
-                
-                line += f' {pct:5.1f}'
+
+                line += f' {pct:6.2f}'
 
                 # detect/collect the 1s samples that exceed the threshold
                 floor_key = f'{key}.{ii}'
@@ -217,12 +217,12 @@ class PsiStat:
                             # Truncate microseconds to milliseconds (.mmm) with [:-3]
                         event += dt_object.strftime("%m-%d %H:%M:%S.%f")[:-3]
 
-                    specifically = f'{pct:7.1f}% {key:<11s}'
+                    specifically = f'{pct:7.2f}% {key:<11s}'
                     if '.full' not in event and '.some' in key:
                         event += '  ' + '.' * len(specifically)
                     event += '  ' + specifically
                     self.event_floor[floor_key] = now + itvl
-            line += f'  {key:<11}'
+            line += f'  {key.split(".")[0]:<6}'
 
             if idx % 2 == 0:
                 line += '     '
@@ -236,9 +236,9 @@ class PsiStat:
                     event += f'   >={threshold}% i={itvl}s'
                     self.events.insert(0, (time.monotonic_ns(), event))
                     event = ''
-            
+
         del self.events[1000:]
-        
+
         # --- Draw Events ---
         if not self.opts.help_mode:
             self.window.calc()
@@ -248,8 +248,8 @@ class PsiStat:
                     break
                 mono_ns, descr = event
                 ago = ago_str((time.monotonic_ns() - mono_ns)/BILLION).strip()
-                self.window.put_body(f'{idx:03d} {ago:>6s}: {descr}')
-            
+                self.window.add_body(f'{idx:03d} {ago:>6s}: {descr}')
+
     def show_help_screen(self):
         """ TBD """
         self.window.clear()
@@ -260,8 +260,8 @@ class PsiStat:
             '   CTRL-c - quit program'
         ]
         for line in lines:
-            self.window.put_body(line)
-            
+            self.window.add_body(line)
+
     def count_valid_samples(self):
         """ Valid samples are no worse that 1.25s later than the one before
          and no more than SAMPLES """
@@ -274,12 +274,12 @@ class PsiStat:
                 break
             count += 1
         return count
- 
+
     def process_psgs(self):
         """ TBD """
         for psg in self.psgs:
             psg.add_sample()
-            
+
         self.times.insert(0, time.time())
         mono = time.monotonic_ns()
         self.monos.insert(0, mono)
@@ -289,7 +289,7 @@ class PsiStat:
 
         if not self.opts.help_mode:
             self.window.clear()
-            
+
         self.prc_samples(valid_sample_count)
 
 
@@ -297,23 +297,23 @@ class PsiStat:
         """Do one loop of collecting samples, and then displaying running
         averages and exception events."""
         timeout_secs, min_timout_secs = 1.0, 0.9
-        
+
         if time.monotonic() - self.last_sample_mono >= min_timout_secs:
             self.process_psgs()
             self.last_sample_mono = time.monotonic()
 
         if self.opts.help_mode:
             self.show_help_screen()
-        
+
         # --- CONSOLE-WINDOW LOOP INTEGRATION ---
-        
+
         # Render the screen
         self.window.render()
         sleep_secs = timeout_secs - (time.monotonic() - self.last_sample_mono)
-        
+
         # Wait for input/timeout using ConsoleWindow.prompt()
         keystroke = self.window.prompt(seconds=sleep_secs)
-        
+
         if keystroke is not None:
             # Pass key to OptionSpinner for handling 'j' and 'k'
             if self.spin.do_key(keystroke, self.window):
@@ -332,10 +332,10 @@ class PsiStat:
                 if self.opts.quit:
                     sys.exit(0)
 
-                return True 
+                return True
             if keystroke in (ord('q'), ord('Q')):
                 return False # Quit
-                
+
         # The loop continues after timeout or non-threshold keystroke
         return True
 
@@ -351,7 +351,7 @@ def main():
         parser.add_argument('-t', '--threshold-pct', default=5, type=int,
                             help='event threshold percent [1-99,dflt=5]')
         opts = parser.parse_args()
-        
+
         pct = min(max(opts.threshold_pct, 1), 99)
 
         pstall = PsiStat(threshold=pct, brief=opts.brief, itvl=opts.event_interval)
@@ -362,8 +362,10 @@ def main():
     except Exception as exc:
         # Note: We no longer call Window.exit_handler(), as ConsoleWindow handles it
         # and there is no guarantee the Window class was ever initialized.
-        if PsiStat.singleton and PsiStat.singleton.window:
-            PsiStat.singleton.window.stop_curses()
+        # 'window' may not exist yet if the failure happened during PsiStat.__init__.
+        window = getattr(PsiStat.singleton, 'window', None) if PsiStat.singleton else None
+        if window:
+            window.stop_curses()
 
         print("exception:", str(exc))
         print(traceback.format_exc())

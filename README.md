@@ -37,18 +37,18 @@ Typically, simply run `psistat`.  Its window looks like:
 
 ```
 PSIs 18:54:04 | [t]hresh=5% [i]tvl=1 [b]rief=off [d]ump ?:help [q]uit
- ---1s ---3s --10s --60s -300s  Full.Stall%      ---1s ---3s --10s --60s -300s  Some.Stall%
-   0.0   0.0   0.0   0.0   0.0  cpu.full           1.7   2.1   6.7   1.1   0.5  cpu.some
-   0.0   0.1   0.2   0.1   0.1  io.full            0.0   0.2   0.3   0.1   0.1  io.some
-   0.0   0.0   1.4   0.2   0.0  memory.full        0.0   0.0   1.5   0.2   0.0  memory.some
+ ----1s ----3s ---10s ---60s --300s  Full%       ----1s ----3s ---10s ---60s --300s  Some%
+   0.00   0.00   0.00   0.00   0.00  cpu            1.70   2.10   6.70   1.10   0.50  cpu
+   0.00   0.10   0.20   0.10   0.10  io             0.00   0.20   0.30   0.10   0.10  io
+   0.00   0.00   1.40   0.20   0.00  memory         0.00   0.00   1.50   0.20   0.00  memory
 ──────────────────────────────────────────────────────────────────────────────────────────────
-000     8s: 10-18 18:53:56.099  ...................    10.5% cpu.some      >=5% i=1s
-001     9s: 10-18 18:53:55.097    14.2% memory.full    14.5% memory.some   >=5% i=1s
-002     9s: 10-18 18:53:55.097  ...................    40.7% cpu.some      >=5% i=1s
-003    26s: 10-18 18:53:37.995    10.0% io.full        10.5% io.some       >=5% i=1s
-004  1m26s: 10-18 18:52:37.665     5.8% io.full         6.0% io.some       >=5% i=1s
-005  3m35s: 10-18 18:50:28.977  ...................     5.2% io.some       >=5% i=1s
-006  4m35s: 10-18 18:49:28.644  ...................     5.0% io.some       >=5% i=1s
+000     8s: 10-18 18:53:56.099  ....................    10.50% cpu.some      >=5% i=1s
+001     9s: 10-18 18:53:55.097    14.20% memory.full    14.50% memory.some   >=5% i=1s
+002     9s: 10-18 18:53:55.097  ....................    40.70% cpu.some      >=5% i=1s
+003    26s: 10-18 18:53:37.995    10.00% io.full        10.50% io.some       >=5% i=1s
+004  1m26s: 10-18 18:52:37.665     5.80% io.full         6.00% io.some       >=5% i=1s
+005  3m35s: 10-18 18:50:28.977  ....................     5.20% io.some       >=5% i=1s
+006  4m35s: 10-18 18:49:28.644  ....................     5.00% io.some       >=5% i=1s
 ```
 
 `psistat` displays:
@@ -88,4 +88,25 @@ options:
 ## Load Test
 To create some test loads, you can use the `create_load.c` program found at
 [psi-by-example](https://github.com/shuveb/psi-by-example).
+
+---
+
+## Development
+Run `psistat` from source (no install needed) using the `runner` wrapper, which
+simply executes the local `psistat` module:
+
+```
+  ./runner             # run with defaults
+  ./runner --help      # show all CLI options
+  ./runner -t 10 -i 3  # e.g. threshold=10%, event interval=3s
+```
+
+Set up a dev environment and run the checks:
+
+```
+  python3 -m venv .venv && . .venv/bin/activate
+  pip install -e ".[dev]"   # installs pytest + ruff
+  pytest                    # unit tests
+  ruff check .              # lint
+```
 
