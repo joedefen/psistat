@@ -12,7 +12,7 @@ name = "psistat"
 # UNIFIED PROJECT METADATA
 [project]
 name = "psistat"
-version = "1.1.0"
+version = "1.1.1"
 description = "psistat - A simple command-line system status tool."
 readme = "README.md"
 requires-python = ">=3.11"

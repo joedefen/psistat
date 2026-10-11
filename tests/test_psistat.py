@@ -54,3 +54,13 @@ def test_no_stale_put_body_references():
     import inspect
 
     assert 'put_body' not in inspect.getsource(psistat)
+
+
+def test_console_window_poll_timeout_supports_1s_sampling():
+    """ConsoleWindow.prompt() only re-checks the elapsed time between getch()
+    calls, so getch's timeout must be well under our ~1s sampling interval.
+    Otherwise the loop runs every ~2s, count_valid_samples() rejects the gaps,
+    and the 1s/3s/10s averages show 'n/a' forever."""
+    from console_window import ConsoleWindow
+
+    assert ConsoleWindow.timeout_ms <= 1000

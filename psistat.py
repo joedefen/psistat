@@ -26,6 +26,14 @@ from console_window import ConsoleWindow, OptionSpinner
 
 locale.setlocale(locale.LC_ALL, '') # needed to draw unicode chars
 
+# ConsoleWindow.prompt(seconds=...) only re-checks the elapsed time between
+# getch() calls, and getch() blocks for ConsoleWindow.timeout_ms (default
+# 2000ms). With that default a ~1s prompt actually blocks ~2s, so our ~1s
+# sampling loop would run at ~2s intervals; count_valid_samples() rejects gaps
+# > 1.25s, so the short windows would never accumulate and 1s/3s/10s would show
+# 'n/a' forever. Poll in short slices so prompt() returns close to `seconds`.
+ConsoleWindow.timeout_ms = 100
+
 
 SAMPLES = 11
 BILLION = 1000000000
