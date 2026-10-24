@@ -127,21 +127,25 @@ class PsiStat:
         # Setup OptionSpinner for 'j' and 'k' keys
         self.spin = OptionSpinner()
         self.opts = self.spin.default_obj
-        self.spin.add_key('help_mode', '? - toggle help screen', vals=[False, True])
+        self.spin.add_key('toggle_help', '? - enter/exit help screen')
         self.spin.add_key(attr='event_interval', descr='i - event interval (secs)',
                   vals=[10, 3, 1, 300, 60])
         self.spin.add_key(attr='threshold', descr='t - set event threshold percent [1,99]',
                           prompt="Enter event threshold percent in range [1,99]")
         self.spin.add_key(attr='brief', descr='b - only load events that fit on screen',
                   vals=['off', 'on'])
-        self.spin.add_key(attr='dump_now', descr='d - dump event log now',
-                  vals=[False, True])
+        self.spin.add_key(attr='dump_now', descr='d - dump event log now')
         self.spin.add_key(attr='quit', descr='q or CTRL-c - quit program',
                   vals=[False, True])
 
         self.opts.brief = 'on' if brief else 'off'
         self.opts.threshold = threshold
         self.opts.event_interval = itvl
+        # Action keys start idle; they are set True by do_key() and cleared
+        # by the loop once the action has been handled.
+        self.opts.toggle_help = False
+        self.opts.help_mode = False
+        self.opts.dump_now = False
 
         # Initialize ConsoleWindow
         self.window = ConsoleWindow(head_line=True, keys=self.spin.keys)
@@ -180,7 +184,7 @@ class PsiStat:
 
         title = (f'PSIs {hhmmss} | [t]hresh={threshold}% [i]tvl={itvl}s '
                  f'[b]rief={brief} [d]ump ?:help [q]uit')
-        self.window.add_header(title)
+        self.window.add_fancy_header(title, mode='Underline')
 
         # Draw Header (6-wide stat columns + 6-wide tag column keep the same width)
         cols = f' {"1s":->6} {"3s":->6} {"10s":->6} {"60s":->6} {"300s":->6}'
@@ -265,6 +269,7 @@ class PsiStat:
         self.spin.show_help_nav_keys(self.window)
         self.spin.show_help_body(self.window)
         lines = [
+            '   ESC - exit help screen',
             '   CTRL-c - quit program'
         ]
         for line in lines:
@@ -323,8 +328,15 @@ class PsiStat:
         keystroke = self.window.prompt(seconds=sleep_secs)
 
         if keystroke is not None:
+            # ESC leaves the help screen (it is not a spinner binding)
+            if keystroke == 27 and self.opts.help_mode:
+                self.opts.help_mode = False
+                return True
             # Pass key to OptionSpinner for handling 'j' and 'k'
             if self.spin.do_key(keystroke, self.window):
+                if self.opts.toggle_help:
+                    self.opts.help_mode = not self.opts.help_mode
+                    self.opts.toggle_help = False
                 if isinstance(self.opts.threshold, str):
                     try:
                         self.opts.threshold = int(self.opts.threshold)
