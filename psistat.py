@@ -19,6 +19,7 @@ import re
 import sys
 import time
 import traceback
+import curses as cs
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -184,7 +185,7 @@ class PsiStat:
 
         title = (f'PSIs {hhmmss} | [t]hresh={threshold}% [i]tvl={itvl}s '
                  f'[b]rief={brief} [d]ump ?:help [q]uit')
-        self.window.add_fancy_header(title, mode='Underline')
+        self.window.add_fancy_header(title, mode='Underline', line_attr=cs.A_DIM)
 
         # Draw Header (6-wide stat columns + 6-wide tag column keep the same width)
         cols = f' {"1s":->6} {"3s":->6} {"10s":->6} {"60s":->6} {"300s":->6}'
