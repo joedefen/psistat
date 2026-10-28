@@ -13,13 +13,13 @@ Now uses the 'console-window' library for the TUI interface.
 
 # pylint: disable=invalid-name,too-many-instance-attributes,import-outside-toplevel,broad-except,too-many-locals
 
+import curses as cs
 import locale
 import os
 import re
 import sys
 import time
 import traceback
-import curses as cs
 from datetime import datetime
 from types import SimpleNamespace
 
