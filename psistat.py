@@ -23,7 +23,7 @@ import traceback
 from datetime import datetime
 from types import SimpleNamespace
 
-from console_window import ConsoleWindow, OptionSpinner
+from console_window import ConsoleWindow, ConsoleWindowOpts, OptionSpinner, TerminalTooSmallError
 
 locale.setlocale(locale.LC_ALL, '') # needed to draw unicode chars
 
@@ -123,6 +123,8 @@ class PsiStat:
         self.event_floor = {}
         self.lineno = 0 # Not strictly needed with ConsoleWindow, but harmless.
         self.last_sample_mono = 0
+        self.notice = '' # transient message shown above the event list
+        self.notice_min_size = None # (cols, rows) needed to clear self.notice
 
         # --- CONSOLE-WINDOW SETUP ---
         # Setup OptionSpinner for 'j' and 'k' keys
@@ -136,8 +138,7 @@ class PsiStat:
         self.spin.add_key(attr='brief', descr='b - only load events that fit on screen',
                   vals=['off', 'on'])
         self.spin.add_key(attr='dump_now', descr='d - dump event log now')
-        self.spin.add_key(attr='quit', descr='q or CTRL-c - quit program',
-                  vals=[False, True])
+        self.spin.add_key(attr='quit', descr='q or CTRL-c - quit program')
 
         self.opts.brief = 'on' if brief else 'off'
         self.opts.threshold = threshold
@@ -147,9 +148,11 @@ class PsiStat:
         self.opts.toggle_help = False
         self.opts.help_mode = False
         self.opts.dump_now = False
+        self.opts.quit = False
 
         # Initialize ConsoleWindow
-        self.window = ConsoleWindow(head_line=True, keys=self.spin.keys)
+        self.window = ConsoleWindow(opts=ConsoleWindowOpts(
+            head_line=True, keys=self.spin.keys, min_cols_rows=(80, 10)))
 
         for tag in 'cpu', 'io', 'memory':
             self.psgs.append(PressureGroup(tag, self.stats))
@@ -255,7 +258,16 @@ class PsiStat:
         # --- Draw Events ---
         if not self.opts.help_mode:
             self.window.calc()
-            limit = (self.window.rows - self.window.body_base) if self.opts.brief == 'on' else 200
+            # Drop a "too small" notice once the terminal can hold the dialog.
+            if self.notice and self.notice_min_size:
+                need_cols, need_rows = self.notice_min_size
+                if self.window.cols >= need_cols and self.window.rows >= need_rows:
+                    self.notice, self.notice_min_size = '', None
+            if self.notice:
+                self.window.add_body(self.notice, attr=cs.A_BOLD)
+            reserved = 1 if self.notice else 0
+            limit = ((self.window.rows - self.window.body_base - reserved)
+                     if self.opts.brief == 'on' else 200)
             for idx, event in enumerate(self.events):
                 if idx >= limit:
                     break
@@ -275,6 +287,8 @@ class PsiStat:
         ]
         for line in lines:
             self.window.add_body(line)
+        if self.notice:
+            self.window.add_body(self.notice, attr=cs.A_BOLD)
 
     def count_valid_samples(self):
         """ Valid samples are no worse that 1.25s later than the one before
@@ -334,7 +348,15 @@ class PsiStat:
                 self.opts.help_mode = False
                 return True
             # Pass key to OptionSpinner for handling 'j' and 'k'
-            if self.spin.do_key(keystroke, self.window):
+            try:
+                handled = self.spin.do_key(keystroke, self.window)
+            except TerminalTooSmallError as exc:
+                # A prompt needs a bigger terminal than the main screen.  Keep
+                # running and show the requirement instead of bailing out.
+                self.notice = str(exc)
+                self.notice_min_size = (exc.required_cols, exc.required_rows)
+                return True
+            if handled:
                 if self.opts.toggle_help:
                     self.opts.help_mode = not self.opts.help_mode
                     self.opts.toggle_help = False

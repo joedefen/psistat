@@ -20,7 +20,7 @@ license = {file = "LICENSE"}
 
 # Add dependencies here if you use non-stdlib PyPI packages (e.g., requests, rich)
 dependencies = [
-    'console-window == 2.1.3',
+    'console-window == 2.2.2',
 ]
 
 authors = [
