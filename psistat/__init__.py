@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Copyright (c) 2022-2025 Joe Defen
 
@@ -13,6 +12,12 @@ Now uses the 'console-window' library for the TUI interface.
 
 # pylint: disable=invalid-name,too-many-instance-attributes,import-outside-toplevel,broad-except,too-many-locals
 
+# The single source of the release number.  `pyproject.toml` declares
+# `dynamic = ["version"]`, so flit, `psistat --version` and `./bless` all read
+# this line instead of keeping copies that can drift.
+__version__ = "1.1.3"
+
+import argparse
 import curses as cs
 import locale
 import os
@@ -383,9 +388,15 @@ class PsiStat:
         return True
 
 def main():
+    """Main execution function, handles CLI arguments."""
+    # Answer `--version` before anything touches curses or /proc: it is the
+    # smoke check `./bless` runs on the wheel it just built, and it has to work
+    # as an ordinary user on a machine whose kernel exposes no PSI files.
+    if '--version' in sys.argv[1:]:
+        print(f'psistat {__version__}')
+        return
+
     try:
-        """Main execution function, handles CLI arguments."""
-        import argparse
         parser = argparse.ArgumentParser()
         parser.add_argument('-b', '--brief', action='store_true',
                             help='whether present only as meny events as fit on the screen')
@@ -412,7 +423,3 @@ def main():
 
         print("exception:", str(exc))
         print(traceback.format_exc())
-
-if __name__ == '__main__':
-
-    main()

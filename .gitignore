@@ -20,6 +20,8 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.whl
+*.tar.gz
 
 # Virtual environments
 .env

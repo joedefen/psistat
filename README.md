@@ -85,6 +85,9 @@ options:
                         event threshold percent [1-99,dflt=5]
 ```
 
+`psistat --version` prints the release number and exits without starting the
+display; that is the check the release gate runs on a freshly built wheel.
+
 ## Load Test
 To create some test loads, you can use the `create_load.c` program found at
 [psi-by-example](https://github.com/shuveb/psi-by-example).
@@ -92,8 +95,21 @@ To create some test loads, you can use the `create_load.c` program found at
 ---
 
 ## Development
-Run `psistat` from source (no install needed) using the `runner` wrapper, which
-simply executes the local `psistat` module:
+
+The developer notes -- layout, test gate, release gate, branch model and the
+distribution inspector -- live in [`tests/README-DEV.md`](tests/README-DEV.md).
+The short version:
+
+Build the project's editable environment (the package, `console-window` and the
+dev extra, including the release toolchain) in `.venv`:
+
+```
+  bt penv
+```
+
+Run `psistat` from source without installing anything or touching
+`~/.local/bin`, using the `runner` wrapper, which re-execs into
+`.venv/bin/python`:
 
 ```
   ./runner             # run with defaults
@@ -101,12 +117,14 @@ simply executes the local `psistat` module:
   ./runner -t 10 -i 3  # e.g. threshold=10%, event interval=3s
 ```
 
-Set up a dev environment and run the checks:
+Run the same commands the test gate runs, on that same interpreter:
 
 ```
-  python3 -m venv .venv && . .venv/bin/activate
-  pip install -e ".[dev]"   # installs pytest + ruff
-  pytest                    # unit tests
-  ruff check .              # lint
+  .venv/bin/python -m ruff check .
+  .venv/bin/python -m compileall -q psistat tests
+  .venv/bin/python -m pytest -q --cov=psistat --cov-report=term-missing
 ```
+
+Releasing goes through `./bless`, the vendored release gate emitted from
+[`blessd`](../blessd); it is never edited here.
 
