@@ -22,10 +22,21 @@ jobs:
       - name: Install package with dev extras
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          python -m pip install -e ".[dev]"
 
+      # The same three commands `./bless` runs, in the same order, never an
+      # equivalent: a green CI result and a green gate mean the same thing.
       - name: Lint (ruff)
-        run: ruff check .
+        run: python -m ruff check .
 
-      - name: Test (pytest)
-        run: pytest
+      - name: Compile (compileall)
+        run: python -m compileall -q psistat tests
+
+      - name: Test (pytest with coverage)
+        run: python -m pytest -q --cov=psistat --cov-report=term-missing
+
+      # The same inspector `./bless` refuses to upload without.
+      - name: Build and inspect the distributions
+        run: |
+          python -m build --outdir dist .
+          python tests/inspect_dist.py dist/*.whl dist/*.tar.gz

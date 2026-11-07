@@ -101,7 +101,7 @@ The ruff selection is committed rather than inherited
 what the gate enforces.
 
 `psistat --version` is answered before the curses screen is touched
-([`main()`](../psistat/__init__.py:389)), because the smoke stage of the release
+([`main()`](../psistat/__init__.py:390)), because the smoke stage of the release
 gate runs it as an ordinary user on a machine whose kernel exposes no PSI files.
 
 ## The release gate: `./bless`

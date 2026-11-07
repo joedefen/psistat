@@ -22,12 +22,20 @@ import sys
 from pathlib import Path
 
 DEVDIR = Path(__file__).resolve().parent
-VENV_PYTHON = DEVDIR / '.venv' / 'bin' / 'python'
+VENV_DIR = DEVDIR / '.venv'
+VENV_PYTHON = VENV_DIR / 'bin' / 'python'
 
 
 def reexec_into_venv():
-    """Hand this file to .venv/bin/python unless we are already running there."""
-    if Path(sys.executable).resolve() == VENV_PYTHON.resolve():
+    """Hand this file to .venv/bin/python unless we are already running there.
+
+    Compare `sys.prefix`, not `sys.executable`: a venv's python is usually a
+    symlink chain back to the system interpreter, so resolving both paths makes
+    an outside interpreter look like the venv's and the re-exec is skipped --
+    which then fails on `console_window`, since the venv's site-packages is not
+    on that interpreter's path.
+    """
+    if Path(sys.prefix).resolve() == VENV_DIR.resolve():
         return
     if not VENV_PYTHON.is_file():
         sys.exit(f'{DEVDIR}: .venv is missing; build it with "bt penv" and retry')
